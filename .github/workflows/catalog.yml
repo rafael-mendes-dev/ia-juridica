@@ -1,0 +1,39 @@
+name: Catálogo de leis
+
+# Reconstrói o índice de todas as normas de ctresb/leis e publica na release "catalog".
+# O app baixa esse arquivo automaticamente quando há versão nova.
+on:
+  schedule:
+    - cron: '0 6 * * 1' # toda segunda-feira, 03:00 (Brasília)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Clonar ctresb/leis (só os .md)
+        run: |
+          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/ctresb/leis leis
+          cd leis
+          git sparse-checkout set --no-cone '/*' '!/fonte/' '!/scripts/' '!*.htm' '!*.html' '!*.json' '!*.jsonl' '!*.gz' '!*.svg'
+          git checkout
+          echo "LEIS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Gerar catálogo
+        run: node scripts/build-catalog.mjs leis out
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view catalog >/dev/null 2>&1 || \
+            gh release create catalog --prerelease --title "Catálogo de leis" \
+              --notes "Índice gerado automaticamente a partir de https://github.com/ctresb/leis. Não é uma versão do app."
+          gh release upload catalog out/catalog.db.gz out/catalog.json --clobber
+          gh release edit catalog --notes "Índice de normas gerado de ctresb/leis@${LEIS_SHA} em $(date -u +%F)."

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Force D:\\\\IAJuridica; foreach \\($c in 'node','npm','python','git','gh','ollama','go','cargo'\\) { $p = Get-Command $c -ErrorAction SilentlyContinue; \"$c => $\\(if \\($p\\) { $p.Source } else { 'MISSING' }\\)\" }; node -v; python --version)"
+    ]
+  }
+}

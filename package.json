@@ -1,0 +1,32 @@
+{
+  "name": "ia-juridica",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Assistente jurídico local com Ollama + base de leis brasileiras",
+  "repository": "github:rafael-mendes-dev/ia-juridica",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "node --watch-path=server server/dev.js",
+    "dev:web": "vite --config web/vite.config.js",
+    "build:web": "vite build --config web/vite.config.js",
+    "build": "node scripts/build.mjs",
+    "catalog": "node scripts/build-catalog.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.14",
+    "mammoth": "^1.13.0",
+    "unpdf": "^1.9.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "esbuild": "^0.28.2",
+    "marked": "^18.1.2",
+    "postject": "^1.0.0-alpha.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.5"
+  }
+}
