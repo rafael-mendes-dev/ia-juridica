@@ -3,3 +3,4 @@ dist/
 dist-catalog/
 .data/
 *.log
+.claude/settings.local.json
