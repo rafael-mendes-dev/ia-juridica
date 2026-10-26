@@ -1,4 +1,4 @@
-name: Catálogo de leis
+﻿name: Catálogo de leis
 
 # Reconstrói o índice de todas as normas de ctresb/leis e publica na release "catalog".
 # O app baixa esse arquivo automaticamente quando há versão nova.
@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - name: Clonar ctresb/leis (só os .md)

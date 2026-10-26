@@ -198,7 +198,12 @@ export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'd
     if (hasCatalog()) await docs.ensureCoreLaws();
     await docs.embedMissing();
   })().catch((e) => console.error('Inicialização:', e.message));
-  setInterval(() => updateCatalog(paths).catch(() => {}), 6 * 3600e3).unref();
+  // verifica novas versões do catálogo (catalog.json é pequeno); ao chegar a primeira, indexa o núcleo
+  setInterval(async () => {
+    const had = hasCatalog();
+    await updateCatalog(paths).catch(() => {});
+    if (!had && hasCatalog()) docs.ensureCoreLaws().then(() => docs.embedMissing()).catch(() => {});
+  }, 30 * 60e3).unref();
 
   return server;
 }

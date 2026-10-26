@@ -60,7 +60,7 @@ async function download(url, dest, label) {
     }
   });
   await pipeline(body, fs.createWriteStream(dest));
-  if (total) process.stdout.write('\n');
+  if (total) process.stdout.write(`\r  ${label}: 100% (${(total / 1e6).toFixed(0)} MB)          \n`);
 }
 
 function openBrowser(url) {
