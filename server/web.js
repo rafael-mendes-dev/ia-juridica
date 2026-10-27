@@ -67,34 +67,50 @@ export async function webSearch(query, max = 6) {
   return [];
 }
 
+// radical simples: "dispensa", "dispensada" e "dispensável" viram "dispen"
+const stems = (s) => tokens(s).map((t) => t.slice(0, 6));
+
 // Seleciona os parágrafos mais relevantes de uma página para a pergunta
 function bestPassages(text, query, maxChars = 1800) {
-  const q = new Set(tokens(query));
+  const q = new Set(stems(query));
   const paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 60);
   const scored = paras.map((p, i) => {
-    const t = tokens(p);
+    const t = stems(p);
     let s = 0;
     for (const x of t) if (q.has(x)) s++;
     return { p, i, s: s / Math.sqrt(t.length + 5) };
-  }).sort((a, b) => b.s - a.s);
-  const picked = [];
+  }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
+  // a partir dos 2 melhores parágrafos, inclui os seguintes (ex.: caput do artigo + seus incisos)
+  const take = new Set();
   let len = 0;
-  for (const x of scored) {
-    if (len + x.p.length > maxChars) continue;
-    picked.push(x);
-    len += x.p.length;
-    if (len > maxChars * 0.8) break;
+  for (const anchor of scored.slice(0, 2)) {
+    for (let i = anchor.i; i < paras.length && len < maxChars; i++) {
+      if (take.has(i)) continue;
+      if (len + paras[i].length > maxChars && take.size) break;
+      take.add(i);
+      len += paras[i].length;
+      if (len > maxChars / 2 && i > anchor.i + 1) break;
+    }
   }
-  return picked.sort((a, b) => a.i - b.i).map((x) => x.p).join('\n\n');
+  return [...take].sort((a, b) => a - b).map((i) => paras[i]).join('\n\n');
+}
+
+// Quantos termos distintos da consulta aparecem no texto
+function overlap(text, qStems) {
+  const t = new Set(stems(text));
+  return qStems.filter((x) => t.has(x)).length;
 }
 
 export async function webContext(query, { pages = 3 } = {}) {
-  const results = await webSearch(query);
+  const q = [...new Set(stems(query))];
+  const need = Math.min(2, q.length);
+  // descarta resultados cujo título/resumo não têm relação com a pergunta
+  const results = (await webSearch(query, 8)).filter((r) => overlap(`${r.title} ${r.snippet}`, q) >= need);
   const out = await Promise.all(results.slice(0, pages + 2).map(async (r) => {
     try {
       const { text } = await fetchPageText(r.url, 8000);
       const passage = bestPassages(text, query);
-      return passage ? { ...r, text: passage } : null;
+      return passage && overlap(passage, q) >= need ? { ...r, text: passage } : null;
     } catch {
       return r.snippet ? { ...r, text: r.snippet } : null;
     }

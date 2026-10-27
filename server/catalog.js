@@ -7,7 +7,9 @@ import { getDb, hasCatalog, attachCatalog, detachCatalog } from './db.js';
 
 const STOP = new Set(('a o as os de da do das dos e em no na nos nas um uma para por com sem que qual quais ' +
   'sobre como ao aos à às se ou mais lei leis norma normas me minha meu sua seu é são ser foi quero saber ' +
-  'liste listar mostre mostrar quais tem ter pode posso art artigo artigos').split(' '));
+  'liste listar mostre mostrar quais tem ter pode posso art artigo artigos ' +
+  // esfera/abrangência viram filtros, não termos de busca
+  'federal federais estadual estaduais municipal municipais nacional brasil brasileira brasileiras').split(' '));
 
 export function tokens(q) {
   return (q || '')

@@ -51,6 +51,7 @@ export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'd
   app.put('/api/settings', async (c) => {
     const before = getSettings();
     const s = setSettings(await c.req.json());
+    if (s.cpuOnly !== before.cpuOnly) await ollama.unload(s.chatModel);
     if (s.embedModel !== before.embedModel) {
       vectors.loadIndex(s.embedModel);
       docs.embedMissing().catch(() => {});
@@ -71,8 +72,16 @@ export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'd
     if (!name) return c.json({ error: 'Nome do modelo obrigatório' }, 400);
     if (pulls[name]?.state === 'baixando') return c.json(pulls[name]);
     pulls[name] = { state: 'baixando', status: 'iniciando', completed: 0, total: 0 };
+    const layers = {};
     ollama.pull(name, (p) => {
-      Object.assign(pulls[name], { status: p.status, completed: p.completed ?? pulls[name].completed, total: p.total ?? pulls[name].total });
+      // o Ollama reporta o progresso por camada (digest); somamos todas
+      if (p.digest && p.total) layers[p.digest] = { total: p.total, completed: p.completed || 0 };
+      const all = Object.values(layers);
+      Object.assign(pulls[name], {
+        status: p.status,
+        total: all.reduce((s, l) => s + l.total, 0),
+        completed: all.reduce((s, l) => s + l.completed, 0),
+      });
     }).then(() => {
       pulls[name] = { state: 'ok', status: 'concluído' };
       if (name.split(':')[0] === getSettings().embedModel.split(':')[0]) docs.embedMissing().catch(() => {});
@@ -93,12 +102,21 @@ export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'd
     return streamSSE(c, async (stream) => {
       const ctrl = new AbortController();
       stream.onAbort(() => ctrl.abort());
-      const send = (event, data) => stream.writeSSE({ event, data: JSON.stringify(data) });
+      // escritas enfileiradas: o pipeline não aguarda cada envio, então esperamos a fila antes de fechar o stream
+      let queue = Promise.resolve();
+      const send = (event, data) => {
+        queue = queue.then(() => stream.writeSSE({ event, data: JSON.stringify(data) })).catch(() => {});
+        return queue;
+      };
       try {
         await answer(body, send, ctrl.signal);
       } catch (e) {
-        if (!ctrl.signal.aborted) await send('error', e.message);
+        if (!ctrl.signal.aborted) {
+          console.error('Chat:', e);
+          send('error', e.message);
+        }
       }
+      await queue;
     });
   });
 

@@ -22,15 +22,18 @@ export function detectRefs(text) {
     if (ano && ano < 100) ano += ano > 30 ? 1900 : 2000;
     refs.push({ tipo: TIPOS[m[1].toLowerCase().replace(/\s+/g, ' ')] || 'Lei Ordinária', numero: m[2].replace(/\./g, ''), ano });
   }
-  const low = text.toLowerCase();
+  const fold = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const low = fold(text);
   for (const [k, alias] of Object.entries(ALIASES)) {
-    if (new RegExp(`\\b${k}\\b`).test(low)) refs.push({ alias });
+    if (new RegExp(`\\b${fold(k)}\\b`).test(low)) refs.push({ alias });
   }
   for (const c of CORE_LAWS) {
-    if (low.includes(c.alias.toLowerCase())) refs.push({ alias: c.alias });
+    if (low.includes(fold(c.alias))) refs.push({ alias: c.alias });
   }
   const arts = [...text.matchAll(/\bart(?:igo)?s?\.?\s*(\d+)/gi)].map((x) => x[1]);
-  return { refs, arts };
+  const incisos = [...text.matchAll(/\binc(?:iso|\.)?s?\s+([IVXLC]+)\b/gi)].map((x) => x[1].toUpperCase());
+  const seen = new Set();
+  return { refs: refs.filter((r) => { const k = JSON.stringify(r); return !seen.has(k) && seen.add(k); }), arts, incisos };
 }
 
 function resolveRef(ref) {
@@ -44,25 +47,28 @@ function resolveRef(ref) {
 }
 
 const PLAN_PROMPT = `Você planeja buscas para um assistente jurídico brasileiro. Leia a conversa e a última pergunta e responda SOMENTE com JSON no formato:
-{"intencao":"responder"|"listar","busca":"palavras-chave curtas","esfera":"federal"|"estadual"|"municipal"|null,"uf":"SP"|null,"web":true|false,"consulta_web":"consulta para buscador"}
+{"intencao":"responder"|"listar","busca":"...","esfera":"federal"|"estadual"|"municipal"|null,"uf":"SP"|null,"web":true|false,"consulta_web":"..."}
+Exemplo: pergunta "posso devolver um produto comprado online?" →
+{"intencao":"responder","busca":"direito de arrependimento compra fora do estabelecimento","esfera":"federal","uf":null,"web":false,"consulta_web":"direito de arrependimento compra online CDC art. 49"}
 Regras:
 - "listar": o usuário quer uma LISTA de leis/normas sobre um tema (ex.: "quais leis tratam de...", "liste as leis...").
 - "busca": termos jurídicos para encontrar o texto legal relevante (sem palavras vazias).
 - "web": true se envolve notícias, fatos recentes, jurisprudência, súmulas, alterações recentes/atualizações de leis, projetos de lei, ou algo que não está no texto da lei.`;
 
-async function plan(question, history, model, numCtx) {
+async function plan(question, history, { chatModel: model, numCtx, cpuOnly }) {
   const fallback = { intencao: /\b(liste|listar|quais (s[aã]o )?as leis|que leis)\b/i.test(question) ? 'listar' : 'responder', busca: question, web: /\b(not[ií]cia|recente|atualiza|alterad|jurisprud|s[uú]mula|stf|stj|projeto de lei|2025|2026)\b/i.test(question) };
   try {
     const ctx = history.slice(-4).map((m) => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content.slice(0, 400)}`).join('\n');
     const out = await ollama.chat({
-      model, numCtx, format: 'json',
+      model, numCtx, format: 'json', cpuOnly, maxTokens: 300,
       messages: [
         { role: 'system', content: PLAN_PROMPT },
         { role: 'user', content: `${ctx ? 'Conversa:\n' + ctx + '\n\n' : ''}Pergunta: ${question}` },
       ],
     });
     const p = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
-    return { ...fallback, ...p, busca: p.busca || question, web: p.web ?? fallback.web };
+    const busca = typeof p.busca === 'string' && p.busca.length > 2 && !p.busca.includes('...') ? p.busca : question;
+    return { ...fallback, ...p, busca, web: p.web ?? fallback.web };
   } catch {
     return fallback;
   }
@@ -73,13 +79,14 @@ const ANSWER_PROMPT = `Você é um assistente jurídico que responde em portugu�
 - Ao citar artigos, mencione a lei e o artigo (ex.: "art. 49 do CDC [2]").
 - Se as fontes não forem suficientes, diga claramente o que não foi encontrado; não invente números de lei ou artigos.
 - Fontes da web podem estar desatualizadas ou ser opinião; sinalize isso quando relevante.
-- Seja objetivo e organizado (tópicos curtos quando ajudar).
+- Seja direto: responda primeiro a pergunta em 1–2 frases e depois detalhe só o necessário (em geral até ~200 palavras, a menos que o usuário peça mais).
 - Ao final, lembre brevemente que a resposta é informativa e não substitui um advogado, apenas quando a pergunta for sobre um caso concreto.`;
 
 function formatSources(sources) {
   return sources.map((s, i) => {
     const head = `[${i + 1}] ${s.title}${s.heading ? ' — ' + s.heading : ''}${s.kind === 'web' ? ' (web: ' + s.url + ')' : ''}`;
-    return `${head}\n${s.text}`;
+    // limita cada fonte para manter o prompt rápido de processar em CPU
+    return `${head}\n${s.text.length > 1400 ? s.text.slice(0, 1400) + '…' : s.text}`;
   }).join('\n\n---\n\n');
 }
 
@@ -110,7 +117,8 @@ export async function answer({ conversationId, question, webOverride }, send, si
   db.prepare('INSERT INTO messages(conversation_id, role, content) VALUES (?, ?, ?)').run(conversationId, 'user', question);
 
   send('status', 'Entendendo a pergunta…');
-  const p = await plan(question, history, model, settings.numCtx);
+  const p = await plan(question, history, settings);
+  send('plan', p);
 
   if (p.intencao === 'listar') {
     const { text, items } = listAnswer(p, question);
@@ -123,7 +131,7 @@ export async function answer({ conversationId, question, webOverride }, send, si
   }
 
   // 1) Leis citadas explicitamente → garante que estão indexadas
-  const { refs, arts } = detectRefs(question);
+  const { refs, arts, incisos } = detectRefs(question);
   const lawDocs = [];
   const seen = new Set();
   for (const ref of refs.slice(0, 4)) {
@@ -154,20 +162,23 @@ export async function answer({ conversationId, question, webOverride }, send, si
   const query = `${p.busca} ${question}`;
   let chunks = [];
   for (const d of lawDocs) {
-    if (arts.length) chunks.push(...articleChunks(d.id, arts));
-    chunks.push(...await searchChunks(query, { k: 4, docIds: [d.id] }));
+    if (arts.length) chunks.push(...articleChunks(d.id, arts, incisos));
+    chunks.push(...await searchChunks(query, { k: arts.length ? 2 : 4, docIds: [d.id] }));
   }
-  chunks.push(...await searchChunks(query, { k: 8 }));
+  chunks.push(...await searchChunks(query, { k: 6 }));
   const uniq = new Map();
   for (const c of chunks) if (!uniq.has(c.id)) uniq.set(c.id, c);
-  let sources = [...uniq.values()].slice(0, 8);
+  let sources = [...uniq.values()].slice(0, 5);
 
-  // 3) Internet
-  const wantWeb = webOverride ?? (settings.webMode === 'sempre' || (settings.webMode === 'auto' && p.web));
+  // 3) Internet — também quando a lei citada veio incompleta do repositório (ex.: só a parte vetada/retificação)
+  const countChunks = db.prepare('SELECT count(*) c FROM chunks WHERE doc_id = ?');
+  const thin = lawDocs.filter((d) => countChunks.get(d.id).c < 8);
+  const wantWeb = webOverride ?? (settings.webMode === 'sempre' || (settings.webMode === 'auto' && (p.web || thin.length > 0)));
   if (wantWeb) {
-    send('status', 'Pesquisando na internet…');
+    send('status', thin.length ? `Texto de ${thin[0].title} parece incompleto na base — buscando na internet…` : 'Pesquisando na internet…');
     try {
-      const web = await webContext(p.consulta_web || `${p.busca} lei Brasil`);
+      const cw = typeof p.consulta_web === 'string' && p.consulta_web.length > 8 && !/\.\.\.|buscador/i.test(p.consulta_web) ? p.consulta_web : null;
+      const web = await webContext(thin.length ? `${thin[0].title} ${p.busca} planalto` : cw || `${p.busca} legislação`);
       sources.push(...web.map((w) => ({ kind: 'web', title: w.title, url: w.url, text: w.text })));
     } catch (e) {
       send('status', `Busca na internet indisponível: ${e.message}`);
@@ -183,7 +194,12 @@ export async function answer({ conversationId, question, webOverride }, send, si
     ...history.slice(-6).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: `FONTES:\n\n${sources.length ? formatSources(sources) : '(nenhuma fonte encontrada)'}\n\nPERGUNTA: ${question}` },
   ];
-  const text = await ollama.chat({ model, messages, numCtx: settings.numCtx, signal, onToken: (t) => send('token', t) });
+  const text = await ollama.chat({
+    model, messages, numCtx: settings.numCtx, think: settings.think, cpuOnly: settings.cpuOnly, signal,
+    onThinking: () => send('status', 'Raciocinando antes de responder…'),
+    onReset: () => send('reset', null),
+    onToken: (t) => send('token', t),
+  });
   db.prepare('INSERT INTO messages(conversation_id, role, content, sources) VALUES (?, ?, ?, ?)')
     .run(conversationId, 'assistant', text, JSON.stringify(sources));
   send('done', { sources });

@@ -21,7 +21,7 @@ export function parseFrontMatter(md) {
   return { meta, body };
 }
 
-const ART_RE = /^\s*\**\s*Art\.?\s*(\d+[\w\-ºo°]*)/i;
+const ART_RE = /^\s*["“]?\**\s*Art\.?\s*(\d+[\w\-ºo°]*)/i;
 const HEAD_RE = /^#{2,6}\s+(.*)/;
 
 // Divide um texto legal em trechos por artigo, agrupando artigos curtos

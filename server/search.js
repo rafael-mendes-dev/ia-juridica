@@ -58,19 +58,23 @@ export async function searchChunks(query, { k = 8, docIds } = {}) {
   return chunkRows(ids);
 }
 
-// Trechos de artigos específicos ("art. 5º") de um documento
-export function articleChunks(docId, arts) {
+// Trechos de artigos específicos ("art. 5º"), priorizando os que contêm os incisos pedidos ("inciso XI")
+export function articleChunks(docId, arts, incisos = []) {
   const want = new Set(arts.map((a) => String(parseInt(a, 10))));
-  const rows = getDb().prepare('SELECT id, heading FROM chunks WHERE doc_id = ? ORDER BY ord').all(docId);
-  const ids = [];
+  const rows = getDb().prepare('SELECT id, heading, text FROM chunks WHERE doc_id = ? ORDER BY ord').all(docId);
+  const hits = [];
   for (const r of rows) {
     const m = (r.heading || '').match(/^Arts?\.\s*(\d+)\D*?(?:a\s*(\d+))?/);
     if (!m) continue;
     const from = +m[1];
     const to = m[2] ? +m[2] : from;
-    for (const a of want) {
-      if (+a >= from && +a <= to) { ids.push(r.id); break; }
-    }
+    if ([...want].some((a) => +a >= from && +a <= to)) hits.push(r);
   }
-  return chunkRows(ids.slice(0, 6));
+  if (incisos.length) {
+    const re = new RegExp(`(^|\\n)\\s*(${incisos.join('|')})\\s*[-–—]`);
+    const withInciso = hits.filter((r) => re.test(r.text));
+    // trecho do inciso + o início do artigo (caput)
+    if (withInciso.length) return chunkRows([...new Set([...withInciso.slice(0, 2), hits[0]].map((r) => r.id))]);
+  }
+  return chunkRows(hits.slice(0, 4).map((r) => r.id));
 }

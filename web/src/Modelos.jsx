@@ -128,6 +128,16 @@ export default function Modelos({ status, models }) {
           </select>
         </label>
       </div>
+      <div className="prefs">
+        <label>
+          <input type="checkbox" checked={settings.think} onChange={(e) => set({ think: e.target.checked })} />
+          {' '}Modo de raciocínio <span className="muted small">— o modelo "pensa" antes de responder (qwen3 e similares). Respostas melhores, porém bem mais lentas.</span>
+        </label>
+        <label>
+          <input type="checkbox" checked={settings.cpuOnly} onChange={(e) => set({ cpuOnly: e.target.checked })} />
+          {' '}Processar só na CPU <span className="muted small">— algumas placas de vídeo (principalmente AMD) ficam mais lentas que o processador. Teste as duas opções.</span>
+        </label>
+      </div>
     </div>
   );
 }

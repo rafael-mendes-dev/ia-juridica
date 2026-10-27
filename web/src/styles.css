@@ -171,6 +171,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-2); 
 /* modelos */
 .modelos h3 { margin: 22px 0 8px; }
 .modelos .row input { max-width: 420px; }
+.prefs { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.prefs input[type='checkbox'] { width: auto; }
 .progress { position: relative; width: 220px; height: 22px; background: var(--panel-2); border-radius: 6px; overflow: hidden; display: inline-block; vertical-align: middle; }
 .progress div { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .35; transition: width .4s; }
 .progress span { position: relative; font-size: 11px; padding: 0 8px; line-height: 22px; }

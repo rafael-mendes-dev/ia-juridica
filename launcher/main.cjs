@@ -125,7 +125,8 @@ function findOllama() {
   ];
   for (const c of candidates) if (fs.existsSync(c)) return c;
   try {
-    return execFileSync('where', ['ollama'], { encoding: 'utf8', windowsHide: true }).split(/\r?\n/)[0].trim() || null;
+    return execFileSync('where', ['ollama'], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
+      .split(/\r?\n/)[0].trim() || null;
   } catch {
     return null;
   }

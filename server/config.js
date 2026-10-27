@@ -12,17 +12,20 @@ export const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
 export const DEFAULT_PORT = 5178;
 
 export const DEFAULT_SETTINGS = {
-  chatModel: 'qwen3:4b',
+  chatModel: 'qwen3:4b-instruct',
   embedModel: 'embeddinggemma',
   webMode: 'auto', // auto | sempre | nunca
   numCtx: 8192,
+  think: false,    // modo de raciocínio (qwen3 etc.): respostas melhores, porém bem mais lentas
+  cpuOnly: false,  // algumas GPUs (ex.: AMD via Vulkan) ficam mais lentas que a própria CPU
 };
 
 // Modelos sugeridos na tela de modelos (tamanho aproximado do download)
 export const RECOMMENDED = {
   chat: [
-    { name: 'qwen3:4b', size: 2.5e9, note: 'Leve e bom em português. Roda com 8 GB de RAM.' },
-    { name: 'qwen3:8b', size: 5.2e9, note: 'Recomendado: melhor raciocínio. 16 GB de RAM ou GPU 8 GB.' },
+    { name: 'qwen3:4b-instruct', size: 2.5e9, note: 'Recomendado para começar: leve, rápido e bom em português. 8 GB de RAM.' },
+    { name: 'qwen3:4b', size: 2.5e9, note: 'Versão que sempre "raciocina" antes: mais cuidadosa, porém várias vezes mais lenta.' },
+    { name: 'qwen3:8b', size: 5.2e9, note: 'Respostas melhores. 16 GB de RAM ou GPU de 8 GB.' },
     { name: 'gemma3:4b', size: 3.3e9, note: 'Alternativa leve do Google.' },
     { name: 'gemma3:12b', size: 8.1e9, note: 'Mais preciso, exige 16 GB+ de RAM / GPU 12 GB.' },
     { name: 'llama3.2:3b', size: 2.0e9, note: 'Muito leve, respostas mais simples.' },

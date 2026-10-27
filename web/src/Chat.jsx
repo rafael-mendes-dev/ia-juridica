@@ -73,6 +73,7 @@ export default function Chat({ status }) {
           else if (ev === 'status') update((x) => ({ ...x, status: data }));
           else if (ev === 'sources') update((x) => ({ ...x, sources: data }));
           else if (ev === 'token') update((x) => ({ ...x, content: x.content + data, status: null }));
+          else if (ev === 'reset') update((x) => ({ ...x, content: '' }));
           else if (ev === 'error') update((x) => ({ ...x, error: data, status: null }));
           else if (ev === 'done') update((x) => ({ ...x, status: null }));
         },
