@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { Check, Download, HardDrive, MemoryStick, RotateCw, Trash2 } from 'lucide-react';
 import { api, fmtBytes } from './api.js';
+import { Alert, Badge, PageHeader, Progress, Switch } from './ui.jsx';
 
 const EMBED_HINT = /embed|bge|minilm|e5|gte|nomic/i;
 
@@ -7,12 +9,13 @@ export default function Modelos({ status, models }) {
   const [custom, setCustom] = useState('');
   const [err, setErr] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-  if (!status || !models) return <p>Carregando…</p>;
+  if (!status || !models) return <div className="container"><PageHeader title="Modelos" /></div>;
 
   const settings = status.settings;
   const installed = models.installed;
   const isInstalled = (n) => installed.some((m) => m.name === n || m.name === n + ':latest');
   const ramGb = status.system.ram / 1024 ** 3;
+  const diskUsed = installed.reduce((s, m) => s + (m.size || 0), 0);
 
   async function pull(name) {
     setErr(null);
@@ -24,120 +27,153 @@ export default function Modelos({ status, models }) {
   }
   const set = (patch) => api('/settings', { method: 'PUT', body: patch }).catch((e) => setErr(e.message));
 
-  const Pull = ({ name }) => {
+  function PullState({ name }) {
     const p = models.pulls[name] || status.pulls[name];
     if (p?.state === 'baixando') {
-      const pct = p.total ? (p.completed / p.total) * 100 : 0;
-      return (
-        <div className="progress" title={p.status}>
-          <div style={{ width: pct + '%' }} />
-          <span>{p.total ? `${pct.toFixed(0)}% · ${fmtBytes(p.completed)} / ${fmtBytes(p.total)}` : p.status}</span>
-        </div>
-      );
+      return <Progress value={p.total ? p.completed / p.total : 0} label={p.total ? `${fmtBytes(p.completed)} de ${fmtBytes(p.total)}` : 'Preparando…'} />;
     }
-    if (p?.state === 'erro') return <span className="error small" title={p.status}>Falhou · <a onClick={() => pull(name)}>tentar de novo</a></span>;
-    return <button onClick={() => pull(name)}>⬇️ Baixar</button>;
-  };
+    if (p?.state === 'erro') {
+      return <button className="btn btn-outline btn-sm" title={p.status} onClick={() => pull(name)}><RotateCw size={14} /> Tentar de novo</button>;
+    }
+    return <button className="btn btn-outline btn-sm" onClick={() => pull(name)}><Download size={14} /> Baixar</button>;
+  }
 
-  const Rec = ({ list, kind }) => (
-    <table className="table">
-      <thead><tr><th>Modelo</th><th>Download</th><th>Observação</th><th /></tr></thead>
-      <tbody>
+  function ModelCards({ list, kind }) {
+    return (
+      <div className="model-grid">
         {list.map((m) => {
           const inst = isInstalled(m.name);
-          const sel = kind === 'chat' ? settings.chatModel === m.name : settings.embedModel === m.name;
+          const sel = (kind === 'chat' ? settings.chatModel : settings.embedModel) === m.name;
           return (
-            <tr key={m.name} className={sel ? 'selected' : ''}>
-              <td><b>{m.name}</b></td>
-              <td>~{fmtBytes(m.size)}</td>
-              <td className="small">{m.note}</td>
-              <td className="right">
-                {inst
-                  ? sel ? <span className="tag green">Em uso</span>
-                    : <button onClick={() => set(kind === 'chat' ? { chatModel: m.name } : { embedModel: m.name })}>Usar</button>
-                  : <Pull name={m.name} />}
-              </td>
-            </tr>
+            <div key={m.name} className={'model-card' + (sel ? ' selected' : '')}>
+              <div className="model-card-head">
+                <code>{m.name}</code>
+                <span className="model-size">{fmtBytes(m.size)}</span>
+              </div>
+              <p>{m.note}</p>
+              <div className="model-card-foot">
+                {inst ? (
+                  sel ? <Badge tone="accent"><Check size={12} /> Em uso</Badge>
+                    : <button className="btn btn-outline btn-sm" onClick={() => set(kind === 'chat' ? { chatModel: m.name } : { embedModel: m.name })}>Usar este</button>
+                ) : <PullState name={m.name} />}
+                {inst && !sel && <span className="model-installed">Instalado</span>}
+              </div>
+            </div>
           );
         })}
-      </tbody>
-    </table>
-  );
+      </div>
+    );
+  }
+
+  const customName = custom.trim();
+  const customPull = customName && (models.pulls[customName] || status.pulls[customName]);
 
   return (
-    <div className="modelos">
-      {err && <div className="banner red">{err}</div>}
-      {!status.ollama.version && <div className="banner red">Ollama offline: não é possível listar ou baixar modelos.</div>}
-      <p className="muted">
-        Seu computador: {ramGb.toFixed(0)} GB de RAM, {status.system.cpus} núcleos.
-        {ramGb < 12 ? ' Prefira modelos de até ~4B parâmetros.' : ramGb < 24 ? ' Modelos de até ~8B devem rodar bem.' : ' Você pode usar modelos maiores (12B+).'}
-      </p>
+    <div className="container">
+      <PageHeader title="Modelos" subtitle="Os modelos rodam no seu computador pelo Ollama. Nada é enviado para a nuvem." />
 
-      <h3>Modelos de chat sugeridos</h3>
-      <Rec list={models.recommended.chat} kind="chat" />
-
-      <h3>Modelos de embedding (busca semântica)</h3>
-      <p className="muted small">Ao trocar o modelo de embedding, toda a base é reprocessada em segundo plano.</p>
-      <Rec list={models.recommended.embed} kind="embed" />
-
-      <h3>Instalados no Ollama</h3>
-      <table className="table">
-        <thead><tr><th>Modelo</th><th>Tamanho</th><th>Parâmetros</th><th>Quantização</th><th /></tr></thead>
-        <tbody>
-          {installed.map((m) => {
-            const embed = EMBED_HINT.test(m.name) || /bert/i.test(m.family || '');
-            return (
-              <tr key={m.name}>
-                <td><b>{m.name}</b> {embed && <span className="tag">embedding</span>}</td>
-                <td>{fmtBytes(m.size)}</td>
-                <td>{m.params || '—'}</td>
-                <td>{m.quant || '—'}</td>
-                <td className="right row">
-                  {!embed && settings.chatModel !== m.name && <button onClick={() => set({ chatModel: m.name })}>Usar no chat</button>}
-                  {embed && settings.embedModel !== m.name.replace(/:latest$/, '') && <button onClick={() => set({ embedModel: m.name.replace(/:latest$/, '') })}>Usar p/ embedding</button>}
-                  {confirmDel === m.name
-                    ? <><button className="danger" onClick={() => remove(m.name)}>Confirmar</button><button onClick={() => setConfirmDel(null)}>Cancelar</button></>
-                    : <button className="ghost" title="Apagar do disco" onClick={() => setConfirmDel(m.name)}>🗑️</button>}
-                </td>
-              </tr>
-            );
-          })}
-          {!installed.length && <tr><td colSpan={5} className="muted">Nenhum modelo instalado ainda.</td></tr>}
-        </tbody>
-      </table>
-
-      <h3>Outro modelo</h3>
-      <form className="row" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) pull(custom.trim()); }}>
-        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="ex.: mistral-nemo:12b (veja ollama.com/library)" />
-        <button className="primary" disabled={!custom.trim()}>Baixar</button>
-      </form>
-      {custom.trim() && (models.pulls[custom.trim()] || status.pulls[custom.trim()]) && <div style={{ marginTop: 8 }}><Pull name={custom.trim()} /></div>}
-
-      <h3>Preferências</h3>
-      <div className="row">
-        <label>Pesquisa na internet (padrão):{' '}
-          <select value={settings.webMode} onChange={(e) => set({ webMode: e.target.value })}>
-            <option value="auto">Automática (a IA decide)</option>
-            <option value="sempre">Sempre</option>
-            <option value="nunca">Nunca</option>
-          </select>
-        </label>
-        <label>Janela de contexto:{' '}
-          <select value={settings.numCtx} onChange={(e) => set({ numCtx: +e.target.value })}>
-            {[4096, 8192, 16384, 32768].map((n) => <option key={n} value={n}>{n.toLocaleString('pt-BR')} tokens</option>)}
-          </select>
-        </label>
+      <div className="stat-row">
+        <div className="stat"><MemoryStick size={16} /><div><b>{ramGb.toFixed(0)} GB</b><span>memória RAM</span></div></div>
+        <div className="stat"><HardDrive size={16} /><div><b>{fmtBytes(diskUsed)}</b><span>em modelos instalados</span></div></div>
+        <div className="stat stat-wide">
+          <div><span>
+            {ramGb < 12 ? 'Recomendado: modelos de até 4B parâmetros.'
+              : ramGb < 24 ? 'Modelos de até 8B parâmetros devem rodar bem.'
+              : 'Você pode usar modelos maiores (12B ou mais).'}
+          </span></div>
+        </div>
       </div>
-      <div className="prefs">
-        <label>
-          <input type="checkbox" checked={settings.think} onChange={(e) => set({ think: e.target.checked })} />
-          {' '}Modo de raciocínio <span className="muted small">— o modelo "pensa" antes de responder (qwen3 e similares). Respostas melhores, porém bem mais lentas.</span>
-        </label>
-        <label>
-          <input type="checkbox" checked={settings.cpuOnly} onChange={(e) => set({ cpuOnly: e.target.checked })} />
-          {' '}Processar só na CPU <span className="muted small">— algumas placas de vídeo (principalmente AMD) ficam mais lentas que o processador. Teste as duas opções.</span>
-        </label>
-      </div>
+
+      {err && <Alert kind="error">{err}</Alert>}
+      {!status.ollama.version && <Alert kind="error">Ollama offline: não é possível listar ou baixar modelos.</Alert>}
+
+      <section className="section">
+        <h2>Modelo de conversa</h2>
+        <p className="section-desc">Gera as respostas. Modelos maiores respondem melhor, mas são mais lentos.</p>
+        <ModelCards list={models.recommended.chat} kind="chat" />
+      </section>
+
+      <section className="section">
+        <h2>Modelo de busca semântica</h2>
+        <p className="section-desc">Encontra trechos pelo significado. Ao trocar, toda a base é reindexada em segundo plano.</p>
+        <ModelCards list={models.recommended.embed} kind="embed" />
+      </section>
+
+      <section className="section">
+        <h2>Instalados no Ollama</h2>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Modelo</th><th className="num">Tamanho</th><th>Parâmetros</th><th>Quantização</th><th /></tr></thead>
+            <tbody>
+              {installed.map((m) => {
+                const embed = EMBED_HINT.test(m.name) || /bert/i.test(m.family || '');
+                const base = m.name.replace(/:latest$/, '');
+                const inUse = settings.chatModel === m.name || settings.embedModel === base;
+                return (
+                  <tr key={m.name}>
+                    <td><code>{m.name}</code> {embed && <Badge>busca</Badge>} {inUse && <Badge tone="accent">em uso</Badge>}</td>
+                    <td className="num">{fmtBytes(m.size)}</td>
+                    <td>{m.params || '—'}</td>
+                    <td>{m.quant || '—'}</td>
+                    <td className="actions">
+                      {!inUse && (embed
+                        ? <button className="btn btn-ghost btn-sm" onClick={() => set({ embedModel: base })}>Usar na busca</button>
+                        : <button className="btn btn-ghost btn-sm" onClick={() => set({ chatModel: m.name })}>Usar na conversa</button>)}
+                      {confirmDel === m.name ? (
+                        <>
+                          <button className="btn btn-danger btn-sm" onClick={() => remove(m.name)}>Apagar</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(null)}>Cancelar</button>
+                        </>
+                      ) : (
+                        <button className="icon-btn" title="Apagar do disco" onClick={() => setConfirmDel(m.name)}><Trash2 size={15} /></button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!installed.length && <tr><td colSpan={5} className="empty-cell">Nenhum modelo instalado.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <form className="inline-form" onSubmit={(e) => { e.preventDefault(); if (customName) pull(customName); }}>
+          <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Outro modelo do ollama.com/library, ex.: mistral-nemo:12b" />
+          <button className="btn btn-outline" disabled={!customName}><Download size={14} /> Baixar</button>
+        </form>
+        {customPull && <div className="inline-progress"><PullState name={customName} /></div>}
+      </section>
+
+      <section className="section">
+        <h2>Preferências</h2>
+        <div className="prefs">
+          <label className="pref-select">
+            <span>Pesquisa na internet</span>
+            <select value={settings.webMode} onChange={(e) => set({ webMode: e.target.value })}>
+              <option value="auto">Automática</option>
+              <option value="sempre">Sempre</option>
+              <option value="nunca">Nunca</option>
+            </select>
+          </label>
+          <label className="pref-select">
+            <span>Janela de contexto</span>
+            <select value={settings.numCtx} onChange={(e) => set({ numCtx: +e.target.value })}>
+              {[4096, 8192, 16384, 32768].map((n) => <option key={n} value={n}>{n.toLocaleString('pt-BR')} tokens</option>)}
+            </select>
+          </label>
+          <Switch
+            checked={settings.think}
+            onChange={(v) => set({ think: v })}
+            label="Modo de raciocínio"
+            hint="O modelo pensa antes de responder. Respostas mais cuidadosas, porém bem mais lentas."
+          />
+          <Switch
+            checked={settings.cpuOnly}
+            onChange={(v) => set({ cpuOnly: v })}
+            label="Processar só na CPU"
+            hint="Algumas placas de vídeo, principalmente AMD, ficam mais lentas que o processador. Teste as duas opções."
+          />
+        </div>
+      </section>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-# ⚖️ IA Jurídica
+# IA Jurídica
 
 Assistente jurídico que roda **100% no seu computador**: IA local via [Ollama](https://ollama.com), base com toda a legislação brasileira do repositório [ctresb/leis](https://github.com/ctresb/leis), suas próprias anotações e documentos, e pesquisa na internet quando necessário. Sem mensalidade e sem enviar suas perguntas para serviços pagos.
 
