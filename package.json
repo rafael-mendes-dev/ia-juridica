@@ -1,6 +1,6 @@
 {
   "name": "ia-juridica",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Assistente jurídico local com Ollama + base de leis brasileiras",
   "repository": "github:rafael-mendes-dev/ia-juridica",
