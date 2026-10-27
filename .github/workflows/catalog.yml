@@ -19,13 +19,23 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - name: Clonar ctresb/leis (só os .md)
+      - name: Baixar ctresb/leis (só os .md)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/ctresb/leis leis
-          cd leis
-          git sparse-checkout set --no-cone '/*' '!/fonte/' '!/scripts/' '!*.htm' '!*.html' '!*.json' '!*.jsonl' '!*.gz' '!*.svg'
-          git checkout
-          echo "LEIS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "LEIS_SHA=$(gh api repos/ctresb/leis/commits/main --jq .sha)" >> "$GITHUB_ENV"
+          mkdir leis
+          # tarball da versão atual (sem o histórico de 4 GB), extraindo só os .md
+          if ! curl -fsSL --retry 3 https://codeload.github.com/ctresb/leis/tar.gz/refs/heads/main \
+              | tar -xz -C leis --strip-components=1 --wildcards '*.md' --exclude='*/fonte/*'; then
+            echo "Tarball falhou; usando clone parcial"
+            rm -rf leis
+            git clone --depth 1 --filter=blob:none --no-checkout https://github.com/ctresb/leis leis
+            cd leis
+            git sparse-checkout set --no-cone '/*' '!/fonte/' '!/scripts/' '!*.htm' '!*.html' '!*.json' '!*.jsonl' '!*.gz' '!*.svg'
+            git checkout
+          fi
+          find leis -name '*.md' | wc -l
       - name: Gerar catálogo
         run: node scripts/build-catalog.mjs leis out
       - name: Publicar
