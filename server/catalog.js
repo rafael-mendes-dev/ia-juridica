@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
-import { APP_REPO, ALIASES } from './config.js';
+import { APP_REPO, ALIASES, CORE_LAWS } from './config.js';
 import { getDb, hasCatalog, attachCatalog, detachCatalog } from './db.js';
 
 const STOP = new Set(('a o as os de da do das dos e em no na nos nas um uma para por com sem que qual quais ' +
@@ -54,7 +54,8 @@ export function searchCatalog({ q = '', tipo, esfera, uf, ano, limit = 30, offse
       from = 'cat.normas_fts JOIN cat.normas n ON n.id = normas_fts.rowid';
       w.push('normas_fts MATCH ?');
       p.push(match);
-      order = 'bm25(normas_fts, 10.0, 3.0, 1.0, 5.0)';
+      // bm25 é negativo (menor = melhor); normas federais e leis em sentido estrito ganham um leve bônus
+      order = `bm25(normas_fts, 10.0, 3.0, 1.0, 5.0) - (n.esfera = 'federal') * 3 - (n.tipo LIKE 'Lei%' OR n.tipo LIKE 'Decreto-Lei%') * 2`;
     }
     const sqlWhere = w.length ? 'WHERE ' + w.join(' AND ') : '';
     const total = db.prepare(`SELECT count(*) c FROM ${from} ${sqlWhere}`).get(...p).c;
@@ -87,6 +88,12 @@ export function searchCatalog({ q = '', tipo, esfera, uf, ano, limit = 30, offse
       if (or) res = run(or);
     }
     if (!q.trim()) res = run(null);
+  }
+  // siglas/apelidos conhecidos (CDC, CLT, LGPD…) colocam a norma correspondente no topo
+  if (!offset) {
+    const pinned = expandAliases(q).map((a) => CORE_LAWS.find((c) => c.alias === a)).filter(Boolean)
+      .map((c) => findNorma(c)).filter((n) => n && !res.items.some((x) => x.path === n.path));
+    if (pinned.length) res = { total: res.total + pinned.length, items: [...pinned, ...res.items].slice(0, limit) };
   }
   return { ...res, available: true };
 }
