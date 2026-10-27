@@ -1,7 +1,7 @@
 import { getDb, getSettings } from './db.js';
 import { ftsQuery } from './catalog.js';
 import { docSourceUrl } from './docs.js';
-import * as ollama from './ollama.js';
+import * as llm from './llm.js';
 import * as vectors from './vectors.js';
 
 function chunkRows(ids) {
@@ -43,7 +43,7 @@ export async function searchChunks(query, { k = 8, docIds } = {}) {
   const { embedModel } = getSettings();
   if (vectors.size() && vectors.indexModel() === embedModel) {
     try {
-      const [emb] = await ollama.embed(embedModel, [query]);
+      const [emb] = await llm.embed(embedModel, [query]);
       let allowed;
       if (docIds?.length) {
         allowed = new Set(db.prepare(`SELECT id FROM chunks c WHERE 1${docFilter(docIds)}`).all().map((r) => r.id));

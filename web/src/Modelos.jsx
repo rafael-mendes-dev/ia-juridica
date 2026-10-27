@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Check, Download, HardDrive, MemoryStick, RotateCw, Trash2 } from 'lucide-react';
-import { api, fmtBytes } from './api.js';
-import { Alert, Badge, PageHeader, Progress, Switch } from './ui.jsx';
+import { Check, Download, HardDrive, KeyRound, MemoryStick, RotateCw, Trash2 } from 'lucide-react';
+import { api, fmtBytes, isOpenAI, modelLabel } from './api.js';
+import { Alert, Badge, PageHeader, Progress, Spinner, Switch } from './ui.jsx';
 
 const EMBED_HINT = /embed|bge|minilm|e5|gte|nomic/i;
 
@@ -9,6 +9,7 @@ export default function Modelos({ status, models }) {
   const [custom, setCustom] = useState('');
   const [err, setErr] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [customGpt, setCustomGpt] = useState('');
   if (!status || !models) return <div className="container"><PageHeader title="Modelos" /></div>;
 
   const settings = status.settings;
@@ -42,21 +43,22 @@ export default function Modelos({ status, models }) {
     return (
       <div className="model-grid">
         {list.map((m) => {
-          const inst = isInstalled(m.name);
+          const cloud = isOpenAI(m.name);
+          const inst = cloud ? status.openai.key : isInstalled(m.name);
           const sel = (kind === 'chat' ? settings.chatModel : settings.embedModel) === m.name;
           return (
             <div key={m.name} className={'model-card' + (sel ? ' selected' : '')}>
               <div className="model-card-head">
-                <code>{m.name}</code>
-                <span className="model-size">{fmtBytes(m.size)}</span>
+                <code>{modelLabel(m.name)}</code>
+                <span className="model-size" title="US$ por 1 milhão de tokens">{cloud ? `US$ ${m.price}` : fmtBytes(m.size)}</span>
               </div>
               <p>{m.note}</p>
               <div className="model-card-foot">
                 {inst ? (
                   sel ? <Badge tone="accent"><Check size={12} /> Em uso</Badge>
                     : <button className="btn btn-outline btn-sm" onClick={() => set(kind === 'chat' ? { chatModel: m.name } : { embedModel: m.name })}>Usar este</button>
-                ) : <PullState name={m.name} />}
-                {inst && !sel && <span className="model-installed">Instalado</span>}
+                ) : cloud ? <span className="model-installed">Cadastre a chave acima</span> : <PullState name={m.name} />}
+                {inst && !sel && !cloud && <span className="model-installed">Instalado</span>}
               </div>
             </div>
           );
@@ -70,7 +72,7 @@ export default function Modelos({ status, models }) {
 
   return (
     <div className="container">
-      <PageHeader title="Modelos" subtitle="Os modelos rodam no seu computador pelo Ollama. Nada é enviado para a nuvem." />
+      <PageHeader title="Modelos" subtitle="Os modelos locais rodam no seu computador pelo Ollama, sem custo. Opcionalmente, use modelos GPT da OpenAI." />
 
       <div className="stat-row">
         <div className="stat"><MemoryStick size={16} /><div><b>{ramGb.toFixed(0)} GB</b><span>memória RAM</span></div></div>
@@ -97,6 +99,23 @@ export default function Modelos({ status, models }) {
         <h2>Modelo de busca semântica</h2>
         <p className="section-desc">Encontra trechos pelo significado. Ao trocar, toda a base é reindexada em segundo plano.</p>
         <ModelCards list={models.recommended.embed} kind="embed" />
+      </section>
+
+      <section className="section">
+        <h2>OpenAI (opcional)</h2>
+        <p className="section-desc">
+          Use modelos GPT na conversa e/ou na busca. É pago por uso, cobrado na sua conta da OpenAI, e a pergunta e os trechos consultados são enviados à API.
+          A chave fica salva só neste computador. Crie uma em platform.openai.com/api-keys.
+        </p>
+        <OpenAIKey status={status} settings={settings} onError={setErr} />
+        <h3 className="subhead">Conversa</h3>
+        <ModelCards list={models.openai.chat} kind="chat" />
+        <h3 className="subhead">Busca semântica</h3>
+        <ModelCards list={models.openai.embed} kind="embed" />
+        <form className="inline-form" onSubmit={(e) => { e.preventDefault(); if (customGpt.trim()) set({ chatModel: 'openai/' + customGpt.trim() }); }}>
+          <input value={customGpt} onChange={(e) => setCustomGpt(e.target.value)} placeholder="Outro modelo de conversa da OpenAI, ex.: gpt-4.1-nano" disabled={!status.openai.key} />
+          <button className="btn btn-outline" disabled={!customGpt.trim() || !status.openai.key}>Usar na conversa</button>
+        </form>
       </section>
 
       <section className="section">
@@ -175,5 +194,50 @@ export default function Modelos({ status, models }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function OpenAIKey({ status, settings, onError }) {
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    onError(null);
+    try {
+      await api('/openai/key', { method: 'PUT', body: { key } });
+      setKey('');
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove() {
+    setConfirm(false);
+    await api('/openai/key', { method: 'DELETE' }).catch((err) => onError(err.message));
+  }
+
+  if (status.openai.key) {
+    return (
+      <div className="key-row">
+        <KeyRound size={16} />
+        <span>Chave cadastrada <code>{settings.openaiKey}</code></span>
+        {confirm ? (
+          <>
+            <button className="btn btn-danger btn-sm" onClick={remove}>Remover chave</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setConfirm(false)}>Cancelar</button>
+          </>
+        ) : <button className="btn btn-ghost btn-sm" onClick={() => setConfirm(true)}>Remover</button>}
+      </div>
+    );
+  }
+  return (
+    <form className="inline-form" onSubmit={save}>
+      <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Cole sua chave da OpenAI (sk-...)" autoComplete="off" />
+      <button className="btn btn-primary" disabled={!key.trim() || busy}>{busy ? <Spinner /> : <KeyRound size={14} />} Salvar chave</button>
+    </form>
   );
 }

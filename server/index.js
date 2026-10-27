@@ -4,12 +4,14 @@ import path from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { serve } from '@hono/node-server';
-import { resolvePaths, RECOMMENDED, LEIS_RAW, DEFAULT_PORT, APP_REPO } from './config.js';
+import { resolvePaths, RECOMMENDED, OPENAI_MODELS, DEFAULT_SETTINGS, LEIS_RAW, DEFAULT_PORT, APP_REPO } from './config.js';
 import { openDb, getDb, getSettings, setSettings, hasCatalog } from './db.js';
 import { searchCatalog, catalogFacets, getNorma, updateCatalog, catalogState } from './catalog.js';
 import { parseFrontMatter } from './chunk.js';
 import * as docs from './docs.js';
 import * as ollama from './ollama.js';
+import * as openai from './openai.js';
+import * as llm from './llm.js';
 import * as vectors from './vectors.js';
 import { answer } from './chat.js';
 
@@ -19,6 +21,23 @@ const MIME = {
 };
 
 const pulls = {};
+
+// Configurações enviadas ao front: a chave da OpenAI aparece apenas mascarada
+function publicSettings() {
+  const { openaiKey, ...s } = getSettings();
+  return { ...s, openaiKey: openaiKey ? `${openaiKey.slice(0, 7)}…${openaiKey.slice(-4)}` : '' };
+}
+
+function applySettings(patch) {
+  const before = getSettings();
+  const s = setSettings(patch);
+  if (s.cpuOnly !== before.cpuOnly && !llm.isOpenAI(s.chatModel)) ollama.unload(s.chatModel);
+  if (s.embedModel !== before.embedModel) {
+    vectors.loadIndex(s.embedModel);
+    docs.embedMissing().catch(() => {});
+  }
+  return s;
+}
 
 export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'dev', onReady } = {}) {
   const paths = resolvePaths(dataDir);
@@ -38,25 +57,45 @@ export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'd
     version,
     repo: APP_REPO,
     ollama: { version: await ollama.version() },
+    openai: { key: !!getSettings().openaiKey },
     catalog: { ...catalogState, available: hasCatalog() },
     jobs: { current: docs.jobs.current, pending: docs.jobs.queue.length, errors: docs.jobs.log.slice(0, 5) },
     core: docs.coreStatus(),
     vectors: vectors.size(),
     pulls,
-    settings: getSettings(),
+    settings: publicSettings(),
     system: { ram: os.totalmem(), cpus: os.cpus().length },
   }));
 
-  app.get('/api/settings', (c) => c.json(getSettings()));
+  app.get('/api/settings', (c) => c.json(publicSettings()));
   app.put('/api/settings', async (c) => {
-    const before = getSettings();
-    const s = setSettings(await c.req.json());
-    if (s.cpuOnly !== before.cpuOnly) await ollama.unload(s.chatModel);
-    if (s.embedModel !== before.embedModel) {
-      vectors.loadIndex(s.embedModel);
-      docs.embedMissing().catch(() => {});
+    const { openaiKey, ...patch } = await c.req.json(); // a chave só muda pela rota própria
+    applySettings(patch);
+    return c.json(publicSettings());
+  });
+
+  // ---- Chave da OpenAI (fica só no banco local) ----
+  app.put('/api/openai/key', async (c) => {
+    const key = String((await c.req.json()).key || '').trim();
+    if (!key) return c.json({ error: 'Informe a chave.' }, 400);
+    try {
+      await openai.checkKey(key);
+    } catch (e) {
+      return c.json({ error: e.message }, 400);
     }
-    return c.json(s);
+    setSettings({ openaiKey: key });
+    if (llm.isOpenAI(getSettings().embedModel)) docs.embedMissing().catch(() => {});
+    return c.json(publicSettings());
+  });
+  app.delete('/api/openai/key', (c) => {
+    // sem chave, volta para os modelos locais padrão
+    const s = getSettings();
+    applySettings({
+      ...(llm.isOpenAI(s.chatModel) ? { chatModel: DEFAULT_SETTINGS.chatModel } : {}),
+      ...(llm.isOpenAI(s.embedModel) ? { embedModel: DEFAULT_SETTINGS.embedModel } : {}),
+    });
+    setSettings({ openaiKey: '' });
+    return c.json(publicSettings());
   });
 
   // ---- Modelos (Ollama) ----
@@ -64,7 +103,7 @@ export async function start({ dataDir, webDir, port = DEFAULT_PORT, version = 'd
     let installed = [];
     let error = null;
     try { installed = await ollama.listModels(); } catch (e) { error = e.message; }
-    return c.json({ installed, recommended: RECOMMENDED, pulls, error });
+    return c.json({ installed, recommended: RECOMMENDED, openai: OPENAI_MODELS, pulls, error });
   });
 
   app.post('/api/models/pull', async (c) => {

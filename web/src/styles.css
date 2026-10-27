@@ -409,6 +409,14 @@ textarea { resize: vertical; }
 .model-installed { font-size: 12px; color: var(--muted); }
 .inline-form { display: flex; gap: 8px; margin-top: 12px; }
 .inline-progress { margin-top: 10px; max-width: 420px; }
+.inline-form input { flex: 1; min-width: 0; }
+.subhead { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 18px 0 10px; }
+.key-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px;
+}
+.key-row svg { color: var(--accent); }
+.key-row > span { flex: 1; font-size: 13.5px; }
 .prefs { display: flex; flex-direction: column; gap: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-top: 12px; }
 .pref-select { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-weight: 500; }
 .pref-select select { width: 220px; }

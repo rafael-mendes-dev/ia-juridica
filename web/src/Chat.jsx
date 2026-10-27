@@ -4,7 +4,7 @@ import {
   ArrowUp, BookOpen, ExternalLink, FileText, Globe, Library, PanelRightClose, PanelRightOpen,
   Quote, Scale, Search, ShieldCheck, Square, BookmarkPlus, Check,
 } from 'lucide-react';
-import { api, streamChat } from './api.js';
+import { api, isOpenAI, modelLabel, streamChat } from './api.js';
 import { Segmented, Spinner } from './ui.jsx';
 
 function renderMarkdown(md) {
@@ -112,7 +112,8 @@ export default function Chat({ status, convId, setConvId, onConvsChanged }) {
   }
 
   const sources = active != null ? messages[active]?.sources || [] : [];
-  const ready = !!status?.ollama.version;
+  const cloud = isOpenAI(status?.settings.chatModel);
+  const ready = cloud ? !!status?.openai.key : !!status?.ollama.version;
 
   return (
     <div className={'chat' + (panel && sources.length ? ' with-panel' : '')}>
@@ -186,7 +187,7 @@ export default function Chat({ status, convId, setConvId, onConvsChanged }) {
                 <Globe size={14} />
                 <Segmented value={web} onChange={setWeb} options={[['auto', 'Auto'], ['sim', 'Sempre'], ['nao', 'Nunca']]} />
               </div>
-              <span className="composer-model">{status?.settings.chatModel}</span>
+              <span className="composer-model">{modelLabel(status?.settings.chatModel)}</span>
               {busy ? (
                 <button type="button" className="send-btn stop" title="Parar" onClick={() => abortRef.current?.abort()}><Square size={14} fill="currentColor" /></button>
               ) : (
@@ -194,7 +195,9 @@ export default function Chat({ status, convId, setConvId, onConvsChanged }) {
               )}
             </div>
           </form>
-          <p className="composer-note">Respostas informativas geradas localmente. Confira sempre a publicação oficial.</p>
+          <p className="composer-note">
+            {cloud ? 'Respostas geradas pela OpenAI (pergunta e trechos são enviados à API).' : 'Respostas informativas geradas localmente.'} Confira sempre a publicação oficial.
+          </p>
         </div>
       </section>
 

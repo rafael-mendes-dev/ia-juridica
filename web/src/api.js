@@ -39,6 +39,10 @@ export async function streamChat(body, onEvent, signal) {
   }
 }
 
+// Modelos "openai/..." rodam na API da OpenAI; os demais, no Ollama local
+export const isOpenAI = (name) => !!name?.startsWith('openai/');
+export const modelLabel = (name) => (isOpenAI(name) ? name.slice(7) : name);
+
 export function fmtBytes(n) {
   if (!n) return '—';
   const u = ['B', 'KB', 'MB', 'GB', 'TB'];

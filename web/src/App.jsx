@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BookOpen, Cpu, FolderOpen, MessageSquare, Plus, Scale, Trash2 } from 'lucide-react';
-import { api, fmtBytes } from './api.js';
+import { api, fmtBytes, isOpenAI } from './api.js';
 import { Alert } from './ui.jsx';
 import Chat from './Chat.jsx';
 import Leis from './Leis.jsx';
@@ -47,8 +47,12 @@ export default function App() {
   }
 
   const installed = new Set((models?.installed || []).flatMap((m) => [m.name, m.name.replace(/:latest$/, '')]));
-  const chatOk = status && installed.has(status.settings.chatModel);
-  const embedOk = status && installed.has(status.settings.embedModel);
+  const ok = (name) => (isOpenAI(name) ? status.openai.key : installed.has(name));
+  const chatOk = status && ok(status.settings.chatModel);
+  const embedOk = status && ok(status.settings.embedModel);
+  // o Ollama só é necessário se algum modelo em uso for local
+  const needsOllama = status && !(isOpenAI(status.settings.chatModel) && isOpenAI(status.settings.embedModel));
+  const ollamaDown = needsOllama && !status.ollama.version;
 
   return (
     <div className="app">
@@ -94,15 +98,17 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {status && (!status.ollama.version || !chatOk || !embedOk) && (
+        {status && (ollamaDown || !chatOk || !embedOk) && (
           <div className="top-alert">
-            {!status.ollama.version ? (
+            {ollamaDown ? (
               <Alert kind="error">O Ollama não está rodando. Abra o Ollama ou reinicie o IA Jurídica para usar o assistente.</Alert>
             ) : (
               <Alert kind="warn">
-                Para começar, baixe {!chatOk && <b>o modelo de conversa ({status.settings.chatModel})</b>}
-                {!chatOk && !embedOk && ' e '}
-                {!embedOk && <b>o modelo de busca ({status.settings.embedModel})</b>}.{' '}
+                Para começar, {(isOpenAI(status.settings.chatModel) || isOpenAI(status.settings.embedModel)) && !status.openai.key
+                  ? <>cadastre sua <b>chave da OpenAI</b> ou escolha modelos locais</>
+                  : <>baixe {!chatOk && <b>o modelo de conversa ({status.settings.chatModel})</b>}
+                    {!chatOk && !embedOk && ' e '}
+                    {!embedOk && <b>o modelo de busca ({status.settings.embedModel})</b>}</>}.{' '}
                 <a onClick={() => setTab('modelos')}>Abrir Modelos</a>
               </Alert>
             )}
@@ -129,6 +135,7 @@ function SystemStatus({ status }) {
   return (
     <div className="sys">
       <div className="sys-row"><span className={'dot ' + (ollama.version ? 'ok' : 'err')} />Ollama {ollama.version || 'offline'}</div>
+      {status.openai.key && <div className="sys-row"><span className="dot ok" />OpenAI conectada</div>}
       <div className="sys-row">
         <span className={'dot ' + (catalog.available ? 'ok' : 'warn')} />
         {catalog.available

@@ -3,7 +3,7 @@ import { LEIS_RAW, LEIS_BLOB, CORE_LAWS } from './config.js';
 import { chunkLegal, chunkText, parseFrontMatter } from './chunk.js';
 import { extractFile, htmlToText } from './extract.js';
 import { getNorma, findNorma } from './catalog.js';
-import * as ollama from './ollama.js';
+import * as llm from './llm.js';
 import * as vectors from './vectors.js';
 
 const BATCH = 16;
@@ -57,26 +57,27 @@ function upsertDoc(kind, ref, title, meta) {
 
 async function embedModelReady() {
   const { embedModel } = getSettings();
-  try {
-    const models = await ollama.listModels();
-    return models.some((m) => m.name === embedModel || m.name === embedModel + ':latest') ? embedModel : null;
-  } catch {
-    return null;
-  }
+  return (await llm.available(embedModel)) ? embedModel : null;
 }
 
 // Gera embeddings para os trechos ainda sem vetor do modelo atual
 async function embedChunks(rows, model, onProgress) {
   const db = getDb();
   const upd = db.prepare('UPDATE chunks SET embedding = ?, model = ? WHERE id = ?');
+  const pending = db.prepare('SELECT 1 FROM chunks WHERE id = ? AND (model IS NOT ? OR embedding IS NULL)');
   const title = new Map();
   for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH);
+    // o modelo foi trocado no meio do caminho: abandona (outra tarefa cuida do novo modelo)
+    if (getSettings().embedModel !== model) return;
+    // pula trechos já processados por outra tarefa ou apagados (evita pagar duas vezes na OpenAI)
+    const batch = rows.slice(i, i + BATCH).filter((r) => pending.get(r.id, model));
+    onProgress?.(Math.min(1, i / rows.length));
+    if (!batch.length) continue;
     const inputs = batch.map((r) => {
       if (!title.has(r.doc_id)) title.set(r.doc_id, db.prepare('SELECT title FROM docs WHERE id = ?').get(r.doc_id)?.title || '');
       return `${title.get(r.doc_id)}${r.heading ? ' — ' + r.heading : ''}\n${r.text}`;
     });
-    const embs = await ollama.embed(model, inputs);
+    const embs = await llm.embed(model, inputs);
     db.exec('BEGIN');
     try {
       batch.forEach((r, j) => {

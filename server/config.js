@@ -18,6 +18,23 @@ export const DEFAULT_SETTINGS = {
   numCtx: 8192,
   think: false,    // modo de raciocínio (qwen3 etc.): respostas melhores, porém bem mais lentas
   cpuOnly: false,  // algumas GPUs (ex.: AMD via Vulkan) ficam mais lentas que a própria CPU
+  openaiKey: '',   // opcional: habilita modelos "openai/..." (pagos, rodam na nuvem)
+};
+
+// Modelos da OpenAI oferecidos na tela de modelos (preço em US$ por 1 milhão de tokens: entrada / saída)
+export const OPENAI_MODELS = {
+  chat: [
+    { name: 'openai/gpt-4o-mini', price: '0,15 / 0,60', note: 'Barato e rápido. Ótimo custo-benefício para o dia a dia.' },
+    { name: 'openai/gpt-4.1-mini', price: '0,40 / 1,60', note: 'Mais preciso que o 4o-mini, ainda barato.' },
+    { name: 'openai/gpt-4o', price: '2,50 / 10', note: 'Modelo clássico de alta qualidade.' },
+    { name: 'openai/gpt-4.1', price: '2 / 8', note: 'Alta qualidade, bom com textos longos.' },
+    { name: 'openai/gpt-5-mini', price: '0,25 / 2', note: 'Raciocina antes de responder: mais cuidadoso, um pouco mais lento.' },
+    { name: 'openai/gpt-5', price: '1,25 / 10', note: 'O mais capaz da lista, com raciocínio. Mais lento e mais caro.' },
+  ],
+  embed: [
+    { name: 'openai/text-embedding-3-small', price: '0,02', note: 'Recomendado: indexar toda a base principal custa centavos.' },
+    { name: 'openai/text-embedding-3-large', price: '0,13', note: 'Maior qualidade de busca, vetores maiores.' },
+  ],
 };
 
 // Modelos sugeridos na tela de modelos (tamanho aproximado do download)

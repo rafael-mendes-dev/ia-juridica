@@ -23,6 +23,7 @@ Toda vez que o `.exe` é aberto, ele verifica se há uma nova versão no GitHub 
 - **Internet**: pesquisa automática para notícias, jurisprudência e alterações recentes. Pode ser ligada ou desligada a qualquer momento.
 - **Sua base**: envie PDF, DOCX, TXT, MD ou HTML, cole textos ou salve páginas da web.
 - **Modelos**: veja os modelos instalados com seus tamanhos, baixe modelos sugeridos com barra de progresso ou remova os que não usa mais.
+- **OpenAI (opcional)**: cadastre uma chave da OpenAI na aba **Modelos** para usar modelos GPT (gpt-4o-mini, gpt-4.1, gpt-5…) nas respostas e/ou `text-embedding-3` na busca. A chave fica salva só no banco local. Com a OpenAI, a pergunta e os trechos consultados são enviados à API e o uso é cobrado na sua conta. Indexar a base principal com `text-embedding-3-small` custa alguns centavos de dólar.
 
 ## Arquitetura
 

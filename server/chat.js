@@ -4,7 +4,7 @@ import { searchCatalog, findNorma } from './catalog.js';
 import { ingestLaw } from './docs.js';
 import { searchChunks, articleChunks } from './search.js';
 import { webContext } from './web.js';
-import * as ollama from './ollama.js';
+import * as llm from './llm.js';
 
 const TIPOS = {
   'lei complementar': 'Lei Complementar', lc: 'Lei Complementar',
@@ -59,7 +59,7 @@ async function plan(question, history, { chatModel: model, numCtx, cpuOnly }) {
   const fallback = { intencao: /\b(liste|listar|quais (s[aã]o )?as leis|que leis)\b/i.test(question) ? 'listar' : 'responder', busca: question, web: /\b(not[ií]cia|recente|atualiza|alterad|jurisprud|s[uú]mula|stf|stj|projeto de lei|2025|2026)\b/i.test(question) };
   try {
     const ctx = history.slice(-4).map((m) => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content.slice(0, 400)}`).join('\n');
-    const out = await ollama.chat({
+    const out = await llm.chat({
       model, numCtx, format: 'json', cpuOnly, maxTokens: 300,
       messages: [
         { role: 'system', content: PLAN_PROMPT },
@@ -194,7 +194,7 @@ export async function answer({ conversationId, question, webOverride }, send, si
     ...history.slice(-6).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: `FONTES:\n\n${sources.length ? formatSources(sources) : '(nenhuma fonte encontrada)'}\n\nPERGUNTA: ${question}` },
   ];
-  const text = await ollama.chat({
+  const text = await llm.chat({
     model, messages, numCtx: settings.numCtx, think: settings.think, cpuOnly: settings.cpuOnly, signal,
     onThinking: () => send('status', 'Raciocinando antes de responder…'),
     onReset: () => send('reset', null),
